@@ -1,0 +1,121 @@
+{
+  "sources": {
+    "模考/【金管局】6月模考卷 财经岗 带答案版.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "模考/【金管局】7月模考 财经岗 带答案版本.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "模考/【金管局】8月模考卷 财经岗 带答案版.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "模考/【金管局】9月模考卷 财经岗 有答案版.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "真题/2021年财经岗-金管局笔试真题及解析.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "真题/2022年财经岗-金管局笔试真题及解析.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "真题/2023年财经岗-金管局笔试真题及解析.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "真题/2024年财经岗-金管局笔试真题及解析.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "真题/2025年财经岗-金管局笔试真题及解析.md": {
+      "items": 120,
+      "valid": 120
+    },
+    "真题/【2019】银保监会财经岗·专业卷（附解析）.md": {
+      "items": 120,
+      "valid": 119
+    },
+    "真题/【考试喵】2020年银保监会笔试真题及解析-财经岗.md": {
+      "items": 120,
+      "valid": 118
+    },
+    "25最新-保险-千题千练 -.md": {
+      "items": 426,
+      "valid": 425
+    },
+    "25最新-经济千题千练.md": {
+      "items": 528,
+      "valid": 527
+    },
+    "25最新-金融-千题千练_1-174.md": {
+      "items": 535,
+      "valid": 534
+    },
+    "25最新-金融-千题千练_175-348.md": {
+      "items": 528,
+      "valid": 527
+    },
+    "金管局-考前三十分-财经岗(1).md": {
+      "items": 190,
+      "valid": 190
+    }
+  },
+  "totalItems": 3527,
+  "validQuestions": 3330,
+  "issues": [
+    {
+      "source": "真题/【2019】银保监会财经岗·专业卷（附解析）.md",
+      "line": 547,
+      "questionId": "17726ae247ea6926",
+      "code": "duplicate_options",
+      "detail": ""
+    },
+    {
+      "source": "真题/【考试喵】2020年银保监会笔试真题及解析-财经岗.md",
+      "line": 855,
+      "questionId": "e4cdea4ecbfa3ca9",
+      "code": "missing_stem",
+      "detail": ""
+    },
+    {
+      "source": "真题/【考试喵】2020年银保监会笔试真题及解析-财经岗.md",
+      "line": 913,
+      "questionId": "0059709d82ddd2d5",
+      "code": "missing_options",
+      "detail": ""
+    },
+    {
+      "source": "25最新-保险-千题千练 -.md",
+      "line": 2171,
+      "questionId": "1b64135e5da9bd35",
+      "code": "duplicate_options",
+      "detail": ""
+    },
+    {
+      "source": "25最新-经济千题千练.md",
+      "line": 6840,
+      "questionId": "e02219bffcfc523a",
+      "code": "answer_option_mismatch",
+      "detail": ""
+    },
+    {
+      "source": "25最新-金融-千题千练_1-174.md",
+      "line": 3300,
+      "questionId": "1d3481ee43b1b91c",
+      "code": "missing_options",
+      "detail": ""
+    },
+    {
+      "source": "25最新-金融-千题千练_175-348.md",
+      "line": 5066,
+      "questionId": "5b520aaa47c1b595",
+      "code": "missing_options",
+      "detail": ""
+    }
+  ]
+}
