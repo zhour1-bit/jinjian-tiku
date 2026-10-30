@@ -140,11 +140,22 @@ function study() {
   const sess=db.sessions[sessionKey()]||{index:view.index,answers:{},submitted:{}};
   const selected=sess.answers[x.id]||[],show=view.mode==='review'||view.mode==='cards'||view.review||!!sess.submitted[x.id];
   const options=Object.entries(x.options||{}).map(([letter,value])=>`<button class="option ${selected.includes(letter)?'sel':''} ${show&&x.answer.includes(letter)?'correct':''} ${show&&selected.includes(letter)&&!x.answer.includes(letter)?'wrong':''}" data-option="${letter}" aria-pressed="${selected.includes(letter)}" ${show?'disabled':''}><b>${letter}</b><span>${fmt(value)}</span></button>`).join('');
+  let cardsBody='';
+  if(view.mode==='cards'){
+    const t=(x.title||'').trim(),raw=x.content||'';
+    const firstLine=raw.trim().split('\n')[0].trim();
+    const exactDup=!!t&&firstLine===t;
+    const partDup=!!t&&!exactDup&&firstLine.startsWith(t);
+    let display=exactDup?(raw.includes('\n')?raw.slice(raw.indexOf('\n')+1):''):raw;
+    display=display.replace(/([^\n])（(?=[0-9一二三四五六七八九十]{1,3}）)/g,'$1\n（');
+    const heading=t&&!exactDup&&!partDup?`<div class="question-title" tabindex="-1">${esc(t)}</div>`:'';
+    cardsBody=`${heading}<div class="content cards-content">${fmt(display)}</div><div class="toolbar"><button class="${db.read[x.id]?'soft':'primary'}" data-read="${x.id}">${db.read[x.id]?'✓ 已读':'标记已读'}</button></div>`;
+  }
   return `<div class="toolbar study-toolbar"><button class="soft" data-go="${view.studyParent}">← ${view.studyParent==='favorites'?'返回收藏':view.studyParent==='wrong'?'返回错题':'返回模块'}</button><span class="pill">${view.mode==='practice'?'练习':view.mode==='review'?'背题':view.mode==='exam'?'考试':'背诵卡片'} · ${view.index+1}/${xs.length}</span><span class="spacer"></span><button class="soft" data-fav="${x.id}">${db.favorites[x.id]?'★ 已收藏':'☆ 收藏'}</button>${view.mode!=='cards'?`<button class="soft" data-edit="${x.id}">纠错</button>`:''}</div>
   <div class="study-layout ${view.mode==='exam'?'with-navigator':''}">${view.mode==='exam'?examNavigator(xs,sess):''}<div class="study-main">
   <div class="panel question-panel"><div class="sub source-meta">${esc(x.section||'')}${x.points!=null?' · '+x.points+' 分':''} · 来源 ${esc(x.source)}:${x.line}</div>
   ${x.passage?`<div class="passage">${fmt(x.passage)}</div>`:''}
-  ${view.mode==='cards'?`<div class="question-title" tabindex="-1">${esc(x.title)}</div><div class="content">${fmt(x.content)}</div><div class="toolbar"><button class="${db.read[x.id]?'soft':'primary'}" data-read="${x.id}">${db.read[x.id]?'✓ 已读':'标记已读'}</button></div>`:`<div class="question-kind">${x.type==='multiple'?'多选题':'单选题'}</div><div class="question-title" tabindex="-1">${view.mode==='exam'&&sess.random?view.index+1:x.number}. ${fmt(x.stem)}</div>${options}
+  ${view.mode==='cards'?cardsBody:`<div class="question-kind">${x.type==='multiple'?'多选题':'单选题'}</div><div class="question-title" tabindex="-1">${view.mode==='exam'&&sess.random?view.index+1:x.number}. ${fmt(x.stem)}</div>${options}
   ${view.mode==='practice'&&!show?`<button class="primary" data-submit="1" ${selected.length?'':'disabled'}>提交答案</button>`:''}
   ${view.mode==='review'?`<button class="${db.read[x.id]?'soft':'primary'}" data-read="${x.id}">${db.read[x.id]?'✓ 已读':'标记已读'}</button>`:''}
   ${view.mode==='practice'&&sess.submitted[x.id]?`<button class="soft" data-retry="${x.id}">重新作答</button>`:''}
