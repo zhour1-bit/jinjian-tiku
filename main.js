@@ -1,9 +1,9 @@
 import {formatContent,prepareMath} from './math-format.js?v=285d646ede81';
 const root=document.querySelector('#app');
 const names={mock:'模考',past:'真题',practice:'千题千练',last30:'考前三十分'};
-let bank=[],baseBank=new Map(),report={issues:[]},view={page:'home',category:null,module:null,mode:null,index:0,filter:null,review:false,editId:null,issueFilter:'open',returnPage:'issues',examNavOpen:null,studyParent:'module',listPage:0},db=load();
+let bank=[],baseBank=new Map(),report={issues:[]},view={page:'home',category:null,module:null,mode:null,index:0,filter:null,review:false,editId:null,issueFilter:'open',returnPage:'issues',examNavOpen:null,studyParent:'module',listPage:0,wrongPractice:false,showDismissed:false},db=load();
 function normalizeNotes(value){return value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).filter(([,text])=>typeof text==='string')):{}}
-function load(){let empty={version:1,favorites:{},read:{},attempts:[],sessions:{},corrections:{},reviewed:{},notes:{}};try{let x=JSON.parse(localStorage.getItem('jinjian-v1'));return x?.version===1?{...empty,...x,corrections:x.corrections||{},reviewed:x.reviewed||{},notes:normalizeNotes(x.notes)}:empty}catch{return empty}}
+function load(){let empty={version:1,favorites:{},read:{},attempts:[],sessions:{},corrections:{},reviewed:{},notes:{},dismissed:{}};try{let x=JSON.parse(localStorage.getItem('jinjian-v1'));return x?.version===1?{...empty,...x,corrections:x.corrections||{},reviewed:x.reviewed||{},notes:normalizeNotes(x.notes),dismissed:x.dismissed||{}}:empty}catch{return empty}}
 let noteTimer=null,pendingNote=null;
 function commitNote(status){
   clearTimeout(noteTimer);noteTimer=null;
@@ -15,11 +15,11 @@ function commitNote(status){
 }
 window.addEventListener('pagehide',()=>commitNote());
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')commitNote()});
-function save(){metricCache=null;localStorage.setItem('jinjian-v1',JSON.stringify(db))}
+function save(){metricCache=null;wrongCache=null;localStorage.setItem('jinjian-v1',JSON.stringify(db))}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 const fmt=formatContent;
 const questionIndex=new Map(),questionModule=new Map(),pendingModules=new Map();
-let issueIds=new Set(),metricCache=null,navigationId=0,retryNavigation=null;
+let issueIds=new Set(),metricCache=null,wrongCache=null,navigationId=0,retryNavigation=null;
 const all=()=>[...questionIndex.values()];
 const byid=id=>questionIndex.get(id);
 function indexModule(m){
@@ -37,21 +37,32 @@ async function ensureModule(m){
   }).finally(()=>pendingModules.delete(m.id));
   pendingModules.set(m.id,request);return request;
 }
-function wrongIds(){const last=new Map();for(const a of db.attempts)last.set(a.id,a.correct);return [...last].filter(([,correct])=>!correct).map(([id])=>id)}
+function wrongData(){
+  if(wrongCache)return wrongCache;
+  const lastWrong=new Map();
+  // 错过一次即永久留在错题本：记录每题最近一次“答错”的作答，供展示与筛选
+  for(const a of db.attempts)if(!a.correct)lastWrong.set(a.id,a);
+  const all=[...lastWrong.keys()];
+  return wrongCache={all,ids:all.filter(id=>!db.dismissed[id]),lastWrong};
+}
+function wrongIds(){return wrongData().ids}
 async function preparePage(page){
   let ids=[];
   if(page==='favorites')ids=Object.keys(db.favorites).filter(id=>db.favorites[id]);
-  if(page==='wrong')ids=wrongIds();
+  if(page==='wrong')ids=wrongData().all;
   if(page==='issues')ids=[...issueIds];
   if(page==='edit')ids=[view.editId];
+  if(page==='study'&&view.filter)ids=[...ids,...view.filter];
   const modules=new Set(ids.map(id=>questionModule.get(id)).filter(Boolean));
   if(page==='module'||page==='study')modules.add(view.module);
   await Promise.all([...modules].map(ensureModule));
-  if(page==='study')await prepareMath();
+  if(page==='study'||page==='wrong')await prepareMath();
 }
 async function navigate(page,updates={}){
   const token=++navigationId;Object.assign(view,updates);
   if(page==='favorites'||page==='wrong')view.listPage=0;
+  if(page==='wrong')view.showDismissed=false;
+  if(page!=='study')view.wrongPractice=false;
   view.page='loading';view.loadingTarget=page;render();
   try{await preparePage(page);if(token!==navigationId)return;view.page=page;render()}
   catch(error){if(token!==navigationId)return;view.page='loadError';view.loadError=error.message;retryNavigation=()=>navigate(page,updates);render()}
@@ -94,9 +105,8 @@ function modulePage(){
   return `<div class="toolbar"><button class="soft" data-cat="${m.category}">← ${names[m.category]}</button></div><div class="panel"><span class="badge">${names[m.category]}</span><h1>${esc(m.title)}</h1><div class="sub">${n} ${m.category==='last30'?'张卡片':'道题'} · 已${m.category==='last30'?'读':'做'} ${d}${m.category!=='last30'?` · 正确率 ${h.length?Math.round(right/h.length*100):0}%`:''}</div><div class="choices">${modes.map(([mode,title,desc])=>`<button class="mode" data-mode="${mode}"><strong>${title}</strong><small>${desc}</small></button>`).join('')}</div>${m.category==='practice'?randomExamSetup(m):''}${m.category!=='last30'&&m.items.some(x=>!x.valid||issueOpen(x.id))?`<div class="warning">本模块有 ${m.items.filter(x=>!x.valid||issueOpen(x.id)).length} 道题待核对。${m.category==='practice'?'随机模拟考试仅抽取完整且已核对的题目。':'练习只纳入答案、选项完整的题目；全部核对后开放考试模式。'}<button class="soft" data-go="issues">查看问题清单</button></div>`:''}<p class="small muted">来源：${m.sources.map(esc).join('、')}</p></div>`;
 }
 function items(){
-  const xs=view.module.studyItems||[];
-  if(!view.filter)return xs;
-  return view.filter.map(id=>questionIndex.get(id)).filter(q=>q?.moduleId===view.module.id&&(view.module.category==='last30'||q.valid));
+  if(view.filter)return view.filter.map(id=>questionIndex.get(id)).filter(q=>q&&(view.module?(q.moduleId===view.module.id&&(view.module.category==='last30'||q.valid)):q.valid));
+  return view.module?.studyItems||[];
 }
 function beginRandomExam(e){
   e.preventDefault();
@@ -111,9 +121,9 @@ function beginRandomExam(e){
   view.examNavOpen=null;
   save();start('exam');
 }
-function sessionKey(){return view.module.id+':'+view.mode}
+function sessionKey(){return view.wrongPractice?'wrong:practice':view.module.id+':'+view.mode}
 function start(mode,idx=0,filter=null,parent='module'){
-  view.mode=mode;const session=db.sessions[view.module.id+':'+mode];
+  view.mode=mode;view.wrongPractice=false;const session=db.sessions[view.module.id+':'+mode];
   view.filter=filter||(mode==='exam'?session?.questionIds:null)||null;
   view.review=false;view.studyParent=parent;
   view.index=Math.max(0,Math.min(items().length-1,filter?idx:(session?.index??idx)));
@@ -168,23 +178,56 @@ function backBar(){
   if(['favorites','wrong','issues','stats','loading','loadError'].includes(view.page))return '<div class="toolbar back-toolbar"><button class="soft" data-go="home">← 返回题库</button></div>';
   return '';
 }
+function answerChips(letters,x){
+  return letters.length?letters.map(a=>`<span class="answer-chip"><b>${a}</b><span>${fmt(x.options?.[a]||'')}</span></span>`).join(''):'<span class="answer-none">未作答</span>';
+}
+function wrongAnswerBlock(x){
+  const mine=wrongData().lastWrong.get(x.id)?.selected||[];
+  return `<div class="answer"><div class="answer-line is-right"><b class="answer-tag">正确选项</b>${answerChips(x.answer||[],x)}</div><div class="answer-line is-mine"><b class="answer-tag">你的选项</b>${answerChips(mine,x)}</div>${x.explanation?`<div class="answer-exp">${fmt(x.explanation)}</div>`:''}</div>`;
+}
+function wrongPracticeSetup(total){
+  const session=db.sessions['wrong:practice'],pending=session?.questionIds?.length;
+  const opts=total>=20?Array.from({length:Math.min(50,total)-19},(_,i)=>i+20):[total];
+  const count=pending&&opts.includes(session.questionIds.length)?session.questionIds.length:opts[0];
+  return `<section class="panel wrong-practice"><h2>错题重练</h2><p class="sub">随机抽取错题重做，每题作答后立即核对答案与解析。${total>=20?'每次练习 20–50 题。':'当前错题不足 20 题，将一次练完全部错题。'}</p>
+  ${pending?`<div class="resume-exam"><span>未完成练习 · ${session.questionIds.length}题 · 已作答 ${session.questionIds.filter(id=>session.answers[id]?.length).length}题</span><button type="button" class="soft" data-resume-wrong>继续练习</button></div>`:''}
+  <form id="wrong-practice-form" class="exam-setup"><label for="wrong-practice-count">练习题数</label><select id="wrong-practice-count" name="count" aria-describedby="wrong-practice-info">${opts.map(n=>`<option value="${n}" ${n===count?'selected':''}>${n}题</option>`).join('')}</select><button class="primary" type="submit">${pending?'重新抽题练习':'随机抽题并开始'}</button></form><p class="small muted" id="wrong-practice-info">错题本共 ${total} 题，同一轮练习不重复抽题；答对不会自动移出，需要时可点题目右侧「移出错题本」。</p></section>`;
+}
+function startWrongPractice(session){
+  navigate('study',{wrongPractice:true,mode:'practice',filter:session.questionIds,review:false,index:Math.max(0,Math.min(session.index??0,session.questionIds.length-1)),studyParent:'wrong'});
+}
+function beginWrongPractice(e){
+  e.preventDefault();
+  const count=Number(new FormData(e.currentTarget).get('count')),ids=wrongIds();
+  if(!Number.isInteger(count)||count<1||count>50||count>ids.length)return;
+  if(db.sessions['wrong:practice']?.questionIds?.length&&!confirm('重新抽题将替换这次未完成的练习，确定继续？'))return;
+  const pool=[...ids];
+  // Fisher–Yates: sample without replacement and keep the sampled order.
+  for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]]}
+  db.sessions['wrong:practice']={index:0,answers:{},submitted:{},questionIds:pool.slice(0,count)};
+  save();
+  startWrongPractice(db.sessions['wrong:practice']);
+}
 function listPage(){
-  const ids=view.page==='favorites'?Object.keys(db.favorites).filter(id=>db.favorites[id]):wrongIds();
-  const xs=ids.map(byid).filter(Boolean),pages=Math.max(1,Math.ceil(xs.length/30));
+  const isWrong=view.page==='wrong',data=wrongData(),dismissed=data.all.filter(id=>db.dismissed[id]);
+  const ids=isWrong?(view.showDismissed?dismissed:data.ids):Object.keys(db.favorites).filter(id=>db.favorites[id]);
+  const xs=ids.map(byid).filter(Boolean),per=isWrong?20:30,pages=Math.max(1,Math.ceil(xs.length/per));
   view.listPage=Math.min(view.listPage,pages-1);
-  const visible=xs.slice(view.listPage*30,view.listPage*30+30);
-  return `<div class="section-head"><h2>${view.page==='favorites'?'我的收藏':'错题本'} · ${xs.length}</h2></div><div class="panel">${visible.length?visible.map(x=>`<div class="row"><div><b>${esc(x.title||x.stem.slice(0,70))}</b><div class="small muted">${esc(x.moduleTitle)} · ${esc(x.section||'')}</div>${db.notes[x.id]?`<div class="note-preview">备注：${esc(db.notes[x.id])}</div>`:''}</div><button data-jump="${x.id}">查看 →</button></div>`).join(''):'<div class="empty">这里还没有内容</div>'}</div>${pages>1?`<div class="toolbar list-pagination"><button class="soft" data-list-page="${view.listPage-1}" ${view.listPage===0?'disabled':''}>上一页</button><span>${view.listPage+1}/${pages}</span><button class="soft" data-list-page="${view.listPage+1}" ${view.listPage===pages-1?'disabled':''}>下一页</button></div>`:''}`;
+  const visible=xs.slice(view.listPage*per,view.listPage*per+per);
+  const manage=isWrong&&data.all.length?`<div class="toolbar wrong-manage"><span class="small muted">${view.showDismissed?'移出的错题不再出现在错题本与重练中，可单独恢复':'答对不会自动移出，可用右侧按钮手动清理'}</span><button class="soft" data-wrong-view="${view.showDismissed?'active':'dismissed'}">${view.showDismissed?'← 返回错题本':'已移出 '+dismissed.length+' 题'}</button></div>`:'';
+  const actions=x=>isWrong?`<div class="row-actions"><button data-jump="${x.id}">查看 →</button><button class="soft" ${view.showDismissed?`data-restore="${x.id}">恢复到错题本`:`data-dismiss="${x.id}">移出错题本`}</button></div>`:`<button data-jump="${x.id}">查看 →</button>`;
+  return `${isWrong&&!view.showDismissed&&xs.length?wrongPracticeSetup(xs.length):''}<div class="section-head"><h2>${isWrong?(view.showDismissed?'已移出错题':'错题本'):'我的收藏'} · ${xs.length}</h2></div>${manage}<div class="panel">${visible.length?visible.map(x=>`<div class="row ${isWrong?'wrong-item':''}"><div class="wrong-main"><b>${esc(x.title||x.stem.slice(0,70))}</b><div class="small muted">${esc(x.moduleTitle)} · ${esc(x.section||'')}</div>${isWrong?wrongAnswerBlock(x):''}${db.notes[x.id]?`<div class="note-preview">备注：${esc(db.notes[x.id])}</div>`:''}</div>${actions(x)}</div>`).join(''):`<div class="empty">${isWrong?(view.showDismissed?'还没有移出错题':'错题本里没有错题，去做题积累吧'):'这里还没有内容'}</div>`}</div>${pages>1?`<div class="toolbar list-pagination"><button class="soft" data-list-page="${view.listPage-1}" ${view.listPage===0?'disabled':''}>上一页</button><span>${view.listPage+1}/${pages}</span><button class="soft" data-list-page="${view.listPage+1}" ${view.listPage===pages-1?'disabled':''}>下一页</button></div>`:''}`;
 }
 function issuesPage(){let groups=issueGroups(),open=groups.filter(g=>!db.reviewed[g.id]),shown=view.issueFilter==='open'?open:groups;return `<div class="section-head"><h2>题目数据问题 · ${groups.length} 道题</h2></div><p class="muted">共 ${report.issues.length} 条问题。每题显示原文位置和问题类型；修正保存在本机，原始 Markdown 不会被改动。</p><div class="toolbar"><button class="${view.issueFilter==='open'?'primary':'soft'}" data-issue-filter="open">待处理 ${open.length}</button><button class="${view.issueFilter==='all'?'primary':'soft'}" data-issue-filter="all">全部 ${groups.length}</button></div><div class="panel">${shown.length?shown.map((g,n)=>{let q=g.question;return `<div class="issue-row"><div class="issue-main"><div class="small muted">${n+1}. ${esc(q.moduleTitle)} · ${esc(q.source)}:${q.line}</div><strong>${esc((q.stem||'（题干缺失）').replace(/\s+/g,' ').slice(0,150))}</strong>${q.knownAnswerText?`<p class="small">已知答案：${esc(q.knownAnswerText)}</p>`:''}<div class="toolbar">${[...new Set(g.issues.map(i=>i.code))].map(code=>`<span class="badge issue-badge">${esc(issueLabels[code]||code)}</span>`).join('')}${db.reviewed[g.id]?'<span class="badge resolved">已核对</span>':''}</div></div><button class="primary" data-edit="${g.id}">${db.reviewed[g.id]?'查看修正':'纠错编辑'} →</button></div>`}).join(''):'<div class="empty">所有题目都已处理</div>'}</div>`}
 function editPage(){let x=byid(view.editId);if(!x)return '<div class="panel">题目不存在</div>';let issues=report.issues.filter(i=>i.questionId===x.id);return `<div class="toolbar"><button class="soft" data-go="${view.returnPage}">← ${view.returnPage==='study'?'返回题目':'问题清单'}</button></div><div class="panel"><h2>纠错编辑 · ${esc(x.moduleTitle)} 第 ${x.number} 题</h2><p class="small muted">来源：${esc(x.source)}:${x.line} · 题目 ID：${x.id}</p>${issues.length?`<div class="warning">原始问题：${[...new Set(issues.map(i=>issueLabels[i.code]||i.code))].join('、')}</div>`:''}${x.knownAnswerText?`<p>已知答案：${esc(x.knownAnswerText)}</p>`:''}${x.correctionNote?`<p class="small muted">校对说明：${esc(x.correctionNote)}</p>`:''}<form id="correction-form"><label>题干<textarea name="stem" rows="6" required>${esc(x.stem)}</textarea></label><label>阅读材料／配图（如有）<textarea name="passage" rows="4">${esc(x.passage||'')}</textarea></label><div class="option-grid">${'ABCDE'.split('').map(a=>`<label>选项 ${a}<textarea name="option-${a}" rows="2">${esc(x.options?.[a]||'')}</textarea></label>`).join('')}</div><label>题型<select name="type"><option value="single" ${x.type==='single'?'selected':''}>单选</option><option value="multiple" ${x.type==='multiple'?'selected':''}>多选</option><option value="boolean" ${x.type==='boolean'?'selected':''}>判断</option></select></label><label>正确答案（如 B 或 ACD）<input name="answer" value="${esc((x.answer||[]).join(''))}" maxlength="5" required></label><label>解析<textarea name="explanation" rows="7">${esc(x.explanation||'')}</textarea></label><div id="form-error" class="error" role="alert"></div><div class="toolbar"><button class="primary" type="submit">保存并核对</button>${db.corrections[x.id]?`<button class="soft" type="button" data-reset-correction="${x.id}">恢复导入内容</button>`:''}</div></form>${notePanel(x.id)}</div>`}
 function stats(){let h=db.attempts,right=h.filter(x=>x.correct).length;return `<div class="section-head"><h2>学习统计</h2></div><div class="stats"><div class="stat"><strong>${new Set(h.map(x=>x.id)).size}</strong><span>已做题目</span></div><div class="stat"><strong>${h.length}</strong><span>总作答次数</span></div><div class="stat"><strong>${right}</strong><span>正确次数</span></div><div class="stat"><strong>${h.length?Math.round(right/h.length*100):0}%</strong><span>历次作答正确率</span></div></div><div class="panel"><h2>各子模块</h2>${bank.map(m=>{let a=history(m),r=a.filter(x=>x.correct).length;return `<div class="row"><span>${esc(m.title)}</span><span class="small muted">${m.category==='last30'?`已读 ${completed(m)}/${m.count}`:`已做 ${completed(m)}/${m.validCount} · 作答 ${a.length} 次 · 正确 ${r} 次 · ${a.length?Math.round(r/a.length*100):0}%`}</span></div>`}).join('')}</div><div class="panel" style="margin-top:16px"><h2>数据备份</h2><p class="muted">数据保存在当前浏览器。更换设备时，先导出，再在新设备导入。</p><div class="toolbar"><button class="primary" data-export="1">导出备份</button><button class="soft" data-import="1">导入备份</button><input class="file" id="import-file" type="file" accept="application/json"></div></div>`}
-function bind(){root.querySelector('[data-retry-load]')?.addEventListener('click',()=>retryNavigation?.());root.querySelectorAll('[data-note]').forEach(t=>t.addEventListener('input',()=>{clearTimeout(noteTimer);pendingNote={id:t.dataset.note,value:t.value};root.querySelector('#note-status').textContent='正在保存…';noteTimer=setTimeout(()=>commitNote(root.querySelector('#note-status')),500)}));root.querySelectorAll('[data-list-page]').forEach(b=>b.onclick=()=>{view.listPage=Number(b.dataset.listPage);render()});root.querySelector('#random-exam-form')?.addEventListener('submit',beginRandomExam);root.querySelector('[data-resume-exam]')?.addEventListener('click',()=>start('exam'));root.querySelectorAll('[data-issue-filter]').forEach(b=>b.onclick=()=>{view.issueFilter=b.dataset.issueFilter;render()});root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{view.editId=b.dataset.edit;view.returnPage=view.page;navigate('edit')});root.querySelector('#correction-form')?.addEventListener('submit',saveCorrection);root.querySelector('[data-reset-correction]')?.addEventListener('click',resetCorrection);root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));root.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>navigate('category',{category:b.dataset.cat}));root.querySelectorAll('[data-module]').forEach(b=>b.onclick=()=>navigate('module',{module:bank.find(m=>m.id===b.dataset.module)}));root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>start(b.dataset.mode));root.querySelectorAll('[data-fav]').forEach(b=>b.onclick=()=>{db.favorites[b.dataset.fav]=!db.favorites[b.dataset.fav];save();render()});root.querySelectorAll('[data-read]').forEach(b=>b.onclick=()=>{db.read[b.dataset.read]=!db.read[b.dataset.read];save();render()});root.querySelectorAll('[data-option]').forEach(b=>b.onclick=()=>{let x=items()[view.index],key=sessionKey(),s=db.sessions[key]||{index:view.index,answers:{},submitted:{}};let v=s.answers[x.id]||[],l=b.dataset.option;s.answers[x.id]=x.type==='multiple'?(v.includes(l)?v.filter(a=>a!==l):[...v,l].sort()):[l];db.sessions[key]=s;save();render()});root.querySelectorAll('[data-submit]').forEach(b=>b.onclick=()=>{let x=items()[view.index],s=db.sessions[sessionKey()],answer=s.answers[x.id]||[],correct=answer.join('')===x.answer.slice().sort().join('');s.submitted[x.id]={correct};db.attempts.push({id:x.id,correct,selected:answer,time:new Date().toISOString(),mode:'practice'});save();render()});root.querySelectorAll('[data-retry]').forEach(b=>b.onclick=()=>{let s=db.sessions[sessionKey()];delete s.answers[b.dataset.retry];delete s.submitted[b.dataset.retry];save();render()});root.querySelectorAll('[data-prev],[data-next]').forEach(b=>b.onclick=()=>moveToQuestion(view.index+(b.dataset.next?1:-1)));root.querySelectorAll('[data-exam-index]').forEach(b=>b.onclick=()=>moveToQuestion(Number(b.dataset.examIndex)));root.querySelector('#exam-navigator')?.addEventListener('toggle',e=>{view.examNavOpen=e.currentTarget.open});root.querySelectorAll('[data-finish]').forEach(b=>b.onclick=finishExam);root.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{let parent=view.page,x=byid(b.dataset.jump);view.module=bank.find(m=>m.id===x.moduleId);let xs=view.module.items.filter(y=>y.valid||view.module.category==='last30');view.index=xs.findIndex(y=>y.id===x.id);start(view.module.category==='last30'?'cards':'review',Math.max(0,view.index),xs.map(y=>y.id),parent)});root.querySelector('[data-export]')?.addEventListener('click',exportData);root.querySelector('[data-import]')?.addEventListener('click',()=>document.querySelector('#import-file').click());root.querySelector('#import-file')?.addEventListener('change',importData)}
+function bind(){root.querySelector('[data-retry-load]')?.addEventListener('click',()=>retryNavigation?.());root.querySelectorAll('[data-note]').forEach(t=>t.addEventListener('input',()=>{clearTimeout(noteTimer);pendingNote={id:t.dataset.note,value:t.value};root.querySelector('#note-status').textContent='正在保存…';noteTimer=setTimeout(()=>commitNote(root.querySelector('#note-status')),500)}));root.querySelectorAll('[data-list-page]').forEach(b=>b.onclick=()=>{view.listPage=Number(b.dataset.listPage);render()});root.querySelectorAll('[data-dismiss]').forEach(b=>b.onclick=()=>{db.dismissed[b.dataset.dismiss]=true;save();render()});root.querySelectorAll('[data-restore]').forEach(b=>b.onclick=()=>{delete db.dismissed[b.dataset.restore];save();render()});root.querySelectorAll('[data-wrong-view]').forEach(b=>b.onclick=()=>{view.showDismissed=b.dataset.wrongView==='dismissed';view.listPage=0;render()});root.querySelector('#random-exam-form')?.addEventListener('submit',beginRandomExam);root.querySelector('[data-resume-exam]')?.addEventListener('click',()=>start('exam'));root.querySelector('#wrong-practice-form')?.addEventListener('submit',beginWrongPractice);root.querySelector('[data-resume-wrong]')?.addEventListener('click',()=>{let s=db.sessions['wrong:practice'];if(s?.questionIds?.length)startWrongPractice(s)});root.querySelectorAll('[data-issue-filter]').forEach(b=>b.onclick=()=>{view.issueFilter=b.dataset.issueFilter;render()});root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{view.editId=b.dataset.edit;view.returnPage=view.page;navigate('edit')});root.querySelector('#correction-form')?.addEventListener('submit',saveCorrection);root.querySelector('[data-reset-correction]')?.addEventListener('click',resetCorrection);root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>navigate(b.dataset.go));root.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>navigate('category',{category:b.dataset.cat}));root.querySelectorAll('[data-module]').forEach(b=>b.onclick=()=>navigate('module',{module:bank.find(m=>m.id===b.dataset.module)}));root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>start(b.dataset.mode));root.querySelectorAll('[data-fav]').forEach(b=>b.onclick=()=>{db.favorites[b.dataset.fav]=!db.favorites[b.dataset.fav];save();render()});root.querySelectorAll('[data-read]').forEach(b=>b.onclick=()=>{db.read[b.dataset.read]=!db.read[b.dataset.read];save();render()});root.querySelectorAll('[data-option]').forEach(b=>b.onclick=()=>{let x=items()[view.index],key=sessionKey(),s=db.sessions[key]||{index:view.index,answers:{},submitted:{}};let v=s.answers[x.id]||[],l=b.dataset.option;s.answers[x.id]=x.type==='multiple'?(v.includes(l)?v.filter(a=>a!==l):[...v,l].sort()):[l];db.sessions[key]=s;save();render()});root.querySelectorAll('[data-submit]').forEach(b=>b.onclick=()=>{let x=items()[view.index],s=db.sessions[sessionKey()],answer=s.answers[x.id]||[],correct=answer.join('')===x.answer.slice().sort().join('');s.submitted[x.id]={correct};db.attempts.push({id:x.id,correct,selected:answer,time:new Date().toISOString(),mode:'practice'});save();render()});root.querySelectorAll('[data-retry]').forEach(b=>b.onclick=()=>{let s=db.sessions[sessionKey()];delete s.answers[b.dataset.retry];delete s.submitted[b.dataset.retry];save();render()});root.querySelectorAll('[data-prev],[data-next]').forEach(b=>b.onclick=()=>moveToQuestion(view.index+(b.dataset.next?1:-1)));root.querySelectorAll('[data-exam-index]').forEach(b=>b.onclick=()=>moveToQuestion(Number(b.dataset.examIndex)));root.querySelector('#exam-navigator')?.addEventListener('toggle',e=>{view.examNavOpen=e.currentTarget.open});root.querySelectorAll('[data-finish]').forEach(b=>b.onclick=finishExam);root.querySelectorAll('[data-jump]').forEach(b=>b.onclick=()=>{let parent=view.page,x=byid(b.dataset.jump);view.module=bank.find(m=>m.id===x.moduleId);let xs=view.module.items.filter(y=>y.valid||view.module.category==='last30');view.index=xs.findIndex(y=>y.id===x.id);start(view.module.category==='last30'?'cards':'review',Math.max(0,view.index),xs.map(y=>y.id),parent)});root.querySelector('[data-export]')?.addEventListener('click',exportData);root.querySelector('[data-import]')?.addEventListener('click',()=>document.querySelector('#import-file').click());root.querySelector('#import-file')?.addEventListener('change',importData)}
 function finishExam(){let xs=items(),key=sessionKey(),s=db.sessions[key]||{answers:{}};if(!confirm(`确定交卷？当前已作答 ${Object.values(s.answers).filter(x=>x?.length).length}/${xs.length} 题。`))return;let correct=0,earned=0,total=0;for(let x of xs){let a=s.answers[x.id]||[],ok=a.length>0&&a.slice().sort().join('')===x.answer.slice().sort().join('');db.attempts.push({id:x.id,correct:ok,selected:a,time:new Date().toISOString(),mode:'exam'});const points=s.random?1:(x.points??1);if(ok){correct++;earned+=points}total+=points}db.sessions[view.module.id+':review']={index:0,answers:s.answers,questionIds:xs.map(q=>q.id),submitted:Object.fromEntries(xs.map(x=>[x.id,{correct:(s.answers[x.id]||[]).length>0&&(s.answers[x.id]||[]).slice().sort().join('')===x.answer.slice().sort().join('')}]))};delete db.sessions[key];save();alert(`已交卷：答对 ${correct}/${xs.length} 题，得分 ${earned}/${total}。现在进入答案复盘。`);view.filter=xs.map(q=>q.id);view.mode='review';view.index=0;view.review=true;render()}
 function restoreBase(){questionIndex.clear();for(const m of bank)if(baseBank.has(m.id)){m.items=structuredClone(baseBank.get(m.id));indexModule(m)}}
 function saveCorrection(e){e.preventDefault();let f=new FormData(e.currentTarget),id=view.editId,x=byid(id),options={};for(let a of 'ABCDE'){let value=String(f.get('option-'+a)||'').trim();if(value)options[a]=value}let answer=String(f.get('answer')||'').toUpperCase().replace(/[\s,，、]/g,'').split('');let draft={stem:String(f.get('stem')||'').trim(),passage:String(f.get('passage')||'').trim(),options,type:String(f.get('type')),answer,explanation:String(f.get('explanation')||'').trim()};let error='';if(!validQuestion(draft))error='请填写题干、至少两个选项，并确保答案字母对应已有选项。';else if(new Set(answer).size!==answer.length)error='答案字母不能重复。';else if(draft.type!=='multiple'&&answer.length!==1)error='单选或判断题只能有一个正确答案。';if(error){document.querySelector('#form-error').textContent=error;return}db.corrections[id]=draft;db.reviewed[id]=true;Object.assign(x,draft,{valid:true});indexModule(questionModule.get(id));try{save()}catch(err){document.querySelector('#form-error').textContent='保存失败：浏览器存储空间不足，请先导出备份。';return}navigate(view.returnPage==='study'?'study':'issues')}
 function resetCorrection(){let id=view.editId;if(!confirm('恢复导入内容，并将这题重新列为待纠错？'))return;delete db.corrections[id];delete db.reviewed[id];restoreBase();applyCorrections();save();render()}
 function exportData(){commitNote();let blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`金监题库备份-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-async function importData(e){try{let x=JSON.parse(await e.target.files[0].text());if(x.version!==1||!Array.isArray(x.attempts)||typeof x.favorites!=='object'||typeof x.read!=='object'||typeof x.sessions!=='object')throw Error('备份格式不正确');if(!confirm('导入会覆盖当前浏览器的学习记录，确定继续？'))return;db={...load(),...x,corrections:x.corrections||{},reviewed:x.reviewed||{},notes:normalizeNotes(x.notes)};restoreBase();applyCorrections();save();render()}catch(err){alert(err.message)}}
+async function importData(e){try{let x=JSON.parse(await e.target.files[0].text());if(x.version!==1||!Array.isArray(x.attempts)||typeof x.favorites!=='object'||typeof x.read!=='object'||typeof x.sessions!=='object')throw Error('备份格式不正确');if(!confirm('导入会覆盖当前浏览器的学习记录，确定继续？'))return;db={...load(),...x,corrections:x.corrections||{},reviewed:x.reviewed||{},notes:normalizeNotes(x.notes),dismissed:x.dismissed||{}};restoreBase();applyCorrections();save();render()}catch(err){alert(err.message)}}
 async function initialize(){
   try{
     const data=await jsonFetch('data/catalogue.json',{cache:'no-cache'});

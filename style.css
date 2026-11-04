@@ -44,3 +44,28 @@ button{touch-action:manipulation}button:disabled{cursor:default;opacity:.6}butto
  .study-main{scroll-margin-top:calc(112px + env(safe-area-inset-top))}
 }
 @media(max-width:380px){.nav button{font-size:11px}.home-overview .stat span{font-size:9px}.home-overview .card{min-height:132px;padding:12px}}
+/* 错题本：直接展示正确答案、每页20题分页、错题重练 */
+.wrong-item{align-items:flex-start}
+.wrong-main{flex:1;min-width:0}
+.wrong-item .answer{margin-top:10px;padding:12px 14px}
+.answer-line{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;margin-top:7px}
+.answer-line:first-child{margin-top:0}
+.answer-tag{flex:0 0 auto;font-size:13px;letter-spacing:.5px}
+.is-right .answer-tag{color:#1f7a4d}
+.is-mine .answer-tag{color:#b4532a}
+.answer-chip{display:inline-flex;gap:6px;align-items:baseline;min-width:0;padding:4px 10px;border-radius:8px;line-height:1.65}
+.is-right .answer-chip{background:#e3f5ea;border:1px solid #b8e2c8}
+.is-mine .answer-chip{background:#fdeee7;border:1px solid #f3cbb4}
+.answer-chip>b{flex:0 0 auto;font-weight:700}
+.is-right .answer-chip>b{color:#2c9b6e}
+.is-mine .answer-chip>b{color:#c26a3c}
+.answer-chip>span{min-width:0}
+.answer-none{font-size:13px;color:#9a7350}
+.answer-exp{margin-top:8px;padding-top:8px;border-top:1px dashed #bfe0cf;color:#4a615a;font-size:14px;line-height:1.7}
+.wrong-practice{margin:6px 0 4px;padding:20px 24px}
+.wrong-practice h2{margin:0 0 8px;font-size:19px}
+.wrong-practice .sub{line-height:1.7}
+.row-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end;flex-shrink:0}
+.row-actions .soft{background:#e7eef5;color:#214965;border-radius:9px;padding:8px 12px;font-size:13px;text-align:center}
+.wrong-manage{justify-content:space-between;gap:10px;margin:2px 0 8px}
+@media(max-width:600px){.wrong-practice{padding:16px}.wrong-item{flex-wrap:wrap}.row-actions{width:100%;flex-direction:row;justify-content:space-between}.row-actions>button{flex:1}}
